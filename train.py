@@ -14,6 +14,9 @@ from diffusion import GaussianDiffusion, make_beta_schedule
 from dataset import MultiResolutionDataset
 from config import DiffusionConfig
 
+'''
+train processing
+'''
 
 def sample_data(loader):
     loader_iter = iter(loader)
@@ -156,6 +159,7 @@ def main(conf):
 
 
 if __name__ == "__main__":
+    #data type definition and basic machine learning configuration
     conf = load_arg_config(DiffusionConfig)
 
     dist.launch(

@@ -12,7 +12,9 @@ from tensorfn.config import (
 import diffusion
 import model
 
-
+'''
+Define the data type, standardize the definition and the usage of data interfaces
+'''
 class Dataset(Config):
     name: StrictStr
     path: StrictStr
