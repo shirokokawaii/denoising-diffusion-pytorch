@@ -19,6 +19,11 @@ train processing
 '''
 
 def sample_data(loader):
+    '''
+    return a generator, yield data for training. 
+    '''
+    # Generally, we implemente this function by torch.dataset.
+
     loader_iter = iter(loader)
     epoch = 0
 
@@ -42,23 +47,33 @@ def accumulate(model1, model2, decay=0.9999):
 
 
 def train(conf, loader, model, ema, diffusion, optimizer, scheduler, device, wandb):
+    # get training data
     loader = sample_data(loader)
 
+    # training steps visualization
     pbar = range(conf.training.n_iter + 1)
 
     if dist.is_primary():
         pbar = tqdm(pbar, dynamic_ncols=True)
 
+    # training loop
     for i in pbar:
+        # get image
         epoch, img = next(loader)
         img = img.to(device)
+
+        # random generate a step [t]
         time = torch.randint(
             0,
             conf.diffusion.beta_schedule["n_timestep"],
             (img.shape[0],),
             device=device,
         )
+
+        # calculate loss with step [t]
         loss = diffusion.p_loss(model, img, time)
+        
+        # backward propagation
         optimizer.zero_grad()
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), 1)
@@ -70,6 +85,7 @@ def train(conf, loader, model, ema, diffusion, optimizer, scheduler, device, wan
         )
 
         if dist.is_primary():
+            # logger
             lr = optimizer.param_groups[0]["lr"]
             pbar.set_description(
                 f"epoch: {epoch}; loss: {loss.item():.4f}; lr: {lr:.5f}"
@@ -84,7 +100,7 @@ def train(conf, loader, model, ema, diffusion, optimizer, scheduler, device, wan
 
                 else:
                     model_module = model
-
+                # save model
                 torch.save(
                     {
                         "model": model_module.state_dict(),
@@ -98,16 +114,20 @@ def train(conf, loader, model, ema, diffusion, optimizer, scheduler, device, wan
 
 
 def main(conf):
+    # wandb configuration
     wandb = None
     if dist.is_primary() and conf.evaluate.wandb:
         wandb = load_wandb()
         wandb.init(project="denoising diffusion")
 
+    # cuda device visualization, cuda only
     device = "cuda"
     beta_schedule = "linear"
 
+    # check if multi-gpus training
     conf.distributed = dist.get_world_size() > 1
 
+    # data preprocessing, including reinforement learning
     transform = transforms.Compose(
         [
             transforms.RandomHorizontalFlip(),
@@ -116,19 +136,24 @@ def main(conf):
         ]
     )
 
+    # training dataset path
     train_set = MultiResolutionDataset(
         conf.dataset.path, transform, conf.dataset.resolution
     )
+    # sampling dataset path
     train_sampler = dist.data_sampler(
         train_set, shuffle=True, distributed=conf.distributed
     )
+    # define dataloader
     train_loader = conf.training.dataloader.make(train_set, sampler=train_sampler)
 
+    # init model and model ema
     model = conf.model.make()
     model = model.to(device)
     ema = conf.model.make()
     ema = ema.to(device)
 
+    # multi-gpus setting
     if conf.distributed:
         model = nn.parallel.DistributedDataParallel(
             model,
@@ -136,9 +161,11 @@ def main(conf):
             output_device=dist.get_local_rank(),
         )
 
+    # training optimizer
     optimizer = conf.training.optimizer.make(model.parameters())
     scheduler = conf.training.scheduler.make(optimizer)
 
+    # load former model if existed
     if conf.ckpt is not None:
         ckpt = torch.load(conf.ckpt, map_location=lambda storage, loc: storage)
 
@@ -150,9 +177,11 @@ def main(conf):
 
         ema.load_state_dict(ckpt["ema"])
 
+    # diffusion algorithm
     betas = conf.diffusion.beta_schedule.make()
     diffusion = GaussianDiffusion(betas).to(device)
 
+    # training
     train(
         conf, train_loader, model, ema, diffusion, optimizer, scheduler, device, wandb
     )
