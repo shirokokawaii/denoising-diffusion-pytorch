@@ -5,7 +5,9 @@ from PIL import Image
 from torch.utils.data import Dataset
 from tensorfn.data import LMDBReader
 
-
+'''
+Simple dataset, inherit from torch.Dataset
+'''
 class MultiResolutionDataset(Dataset):
     def __init__(self, path, transform, resolution=256):
         self.reader = LMDBReader(path, reader="raw")

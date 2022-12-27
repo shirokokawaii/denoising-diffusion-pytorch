@@ -22,7 +22,7 @@ def sample_data(loader):
     '''
     return a generator, yield data for training. 
     '''
-    # Generally, we implemente this function by torch.dataset.
+    # Redundant function, epoch records can be placed into the loop.
 
     loader_iter = iter(loader)
     epoch = 0

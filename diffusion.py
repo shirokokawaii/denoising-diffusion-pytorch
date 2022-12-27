@@ -4,7 +4,9 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-
+'''
+Diffusion Algorithms
+'''
 def make_beta_schedule(
     schedule, n_timestep, linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3
 ):
