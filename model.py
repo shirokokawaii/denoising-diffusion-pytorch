@@ -16,6 +16,7 @@ Unet and its components
 swish = F.silu
 
 
+# tensor value init.
 @torch.no_grad()
 def variance_scaling_init_(tensor, scale=1, mode="fan_avg", distribution="uniform"):
     fan_in, fan_out = nn.init._calculate_fan_in_and_fan_out(tensor)
@@ -32,14 +33,16 @@ def variance_scaling_init_(tensor, scale=1, mode="fan_avg", distribution="unifor
     if distribution == "normal":
         std = math.sqrt(scale)
 
+        # normal distribution
         return tensor.normal_(0, std)
 
     else:
         bound = math.sqrt(3 * scale)
 
+        # continuous uniform distribution
         return tensor.uniform_(-bound, bound)
 
-
+# convolution
 def conv2d(
     in_channel,
     out_channel,
@@ -54,6 +57,7 @@ def conv2d(
         in_channel, out_channel, kernel_size, stride=stride, padding=padding, bias=bias
     )
 
+    # tensor value init
     variance_scaling_init_(conv.weight, scale, mode=mode)
 
     if bias:
@@ -61,7 +65,7 @@ def conv2d(
 
     return conv
 
-
+# linear layer
 def linear(in_channel, out_channel, scale=1, mode="fan_avg"):
     lin = nn.Linear(in_channel, out_channel)
 
@@ -70,7 +74,7 @@ def linear(in_channel, out_channel, scale=1, mode="fan_avg"):
 
     return lin
 
-
+# silu
 class Swish(nn.Module):
     def __init__(self):
         super().__init__()
@@ -102,6 +106,7 @@ class ResBlock(nn.Module):
     ):
         super().__init__()
 
+        # time embedding
         self.use_affine_time = use_affine_time
         time_out_dim = out_channel
         time_scale = 1
@@ -112,6 +117,7 @@ class ResBlock(nn.Module):
             time_scale = 1e-10
             norm_affine = False
 
+        # input convolution
         self.norm1 = nn.GroupNorm(32, in_channel)
         self.activation1 = Swish()
         self.conv1 = conv2d(in_channel, out_channel, 3, padding=1)
@@ -120,6 +126,7 @@ class ResBlock(nn.Module):
             Swish(), linear(time_dim, time_out_dim, scale=time_scale)
         )
 
+        # output convolution
         self.norm2 = nn.GroupNorm(32, out_channel, affine=norm_affine)
         self.activation2 = Swish()
         self.dropout = nn.Dropout(dropout)
@@ -236,7 +243,7 @@ class ResBlockWithAttention(nn.Module):
 
         return out
 
-
+# transpose tensor for input
 def spatial_fold(input, fold):
     if fold == 1:
         return input
@@ -252,6 +259,7 @@ def spatial_fold(input, fold):
     )
 
 
+# transpose tensor for output
 def spatial_unfold(input, unfold):
     if unfold == 1:
         return input
@@ -284,10 +292,12 @@ class UNet(nn.Module):
 
         self.fold = fold
 
+        # time embedding channel
         time_dim = channel * 4
 
         n_block = len(channel_multiplier)
 
+        # time embedding module
         self.time = nn.Sequential(
             TimeEmbedding(channel),
             linear(channel, time_dim),
@@ -295,11 +305,15 @@ class UNet(nn.Module):
             linear(time_dim, time_dim),
         )
 
+        # downsample block init
         down_layers = [conv2d(in_channel * (fold ** 2), channel, 3, padding=1)]
         feat_channels = [channel]
         in_channel = channel
+
+        # for each layer, add resblock and downsample block
         for i in range(n_block):
             for _ in range(n_res_blocks):
+                # present channel's number
                 channel_mult = channel * channel_multiplier[i]
 
                 down_layers.append(
@@ -316,13 +330,16 @@ class UNet(nn.Module):
 
                 feat_channels.append(channel_mult)
                 in_channel = channel_mult
-
+            
+            # ignore downsample in the deepest layer
             if i != n_block - 1:
                 down_layers.append(Downsample(in_channel))
                 feat_channels.append(in_channel)
 
+        # into a module list
         self.down = nn.ModuleList(down_layers)
 
+        # middle block, two resblocks.
         self.mid = nn.ModuleList(
             [
                 ResBlockWithAttention(
@@ -344,11 +361,14 @@ class UNet(nn.Module):
             ]
         )
 
+        # upsample
         up_layers = []
         for i in reversed(range(n_block)):
             for _ in range(n_res_blocks + 1):
+                # present channel's number
                 channel_mult = channel * channel_multiplier[i]
 
+                # resblock
                 up_layers.append(
                     ResBlockWithAttention(
                         in_channel + feat_channels.pop(),
@@ -363,24 +383,31 @@ class UNet(nn.Module):
 
                 in_channel = channel_mult
 
+            # ignore upsample in the last step
             if i != 0:
                 up_layers.append(Upsample(in_channel))
 
+        # into module list
         self.up = nn.ModuleList(up_layers)
 
+        # output convolution
         self.out = nn.Sequential(
             nn.GroupNorm(32, in_channel),
             Swish(),
             conv2d(in_channel, 3 * (fold ** 2), 3, padding=1, scale=1e-10),
         )
 
+    # forward method
     def forward(self, input, time):
+        # time embedding
         time_embed = self.time(time)
 
         feats = []
 
+        # downsample
         out = spatial_fold(input, self.fold)
         for layer in self.down:
+            # resblock
             if isinstance(layer, ResBlockWithAttention):
                 out = layer(out, time_embed)
 
@@ -389,10 +416,13 @@ class UNet(nn.Module):
 
             feats.append(out)
 
+        # middle
         for layer in self.mid:
             out = layer(out, time_embed)
-
+        
+        # upsample
         for layer in self.up:
+            # resblock
             if isinstance(layer, ResBlockWithAttention):
                 out = layer(torch.cat((out, feats.pop()), 1), time_embed)
 
