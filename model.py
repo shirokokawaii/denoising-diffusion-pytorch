@@ -139,10 +139,13 @@ class ResBlock(nn.Module):
             self.skip = None
 
     def forward(self, input, time):
+        # batch size
         batch = input.shape[0]
 
+        # first convolution
         out = self.conv1(self.activation1(self.norm1(input)))
 
+        # time embedding
         if self.use_affine_time:
             gamma, beta = self.time(time).view(batch, -1, 1, 1).chunk(2, dim=1)
             out = (1 + gamma) * self.norm2(out) + beta
@@ -151,6 +154,7 @@ class ResBlock(nn.Module):
             out = out + self.time(time).view(batch, -1, 1, 1)
             out = self.norm2(out)
 
+        # output convolution
         out = self.conv2(self.dropout(self.activation2(out)))
 
         if self.skip is not None:
@@ -158,7 +162,7 @@ class ResBlock(nn.Module):
 
         return out + input
 
-
+# self-attention block
 class SelfAttention(nn.Module):
     def __init__(self, in_channel, n_head=1):
         super().__init__()

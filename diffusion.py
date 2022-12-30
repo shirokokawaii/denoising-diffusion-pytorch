@@ -96,6 +96,7 @@ class GaussianDiffusion(nn.Module):
     def register(self, name, tensor):
         self.register_buffer(name, tensor.type(torch.float32))
 
+    # forward diffusion (using the nice property): q(x_t | x_0)
     def q_sample(self, x_0, t, noise=None):
         if noise is None:
             noise = torch.randn_like(x_0)
@@ -105,6 +106,7 @@ class GaussianDiffusion(nn.Module):
             + extract(self.sqrt_one_minus_alphas_cumprod, t, x_0.shape) * noise
         )
 
+    # compute train losses
     def p_loss(self, model, x_0, t, noise=None):
         if noise is None:
             noise = torch.randn_like(x_0)
@@ -114,12 +116,14 @@ class GaussianDiffusion(nn.Module):
 
         return F.mse_loss(x_recon, noise)
 
+    # compute x_0 from x_t and pred noise: the reverse of `q_sample`
     def predict_start_from_noise(self, x_t, t, noise):
         return (
             extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t
             - extract(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * noise
         )
 
+    # Compute the mean and variance of the diffusion posterior: q(x_{t-1} | x_t, x_0)
     def q_posterior(self, x_0, x_t, t):
         mean = (
             extract(self.posterior_mean_coef1, t, x_t.shape) * x_0
@@ -130,6 +134,7 @@ class GaussianDiffusion(nn.Module):
 
         return mean, var, log_var_clipped
 
+    # compute predicted mean and variance of p(x_{t-1} | x_t)
     def p_mean_variance(self, model, x, t, clip_denoised):
         x_recon = self.predict_start_from_noise(x, t, noise=model(x, t))
 
@@ -140,6 +145,7 @@ class GaussianDiffusion(nn.Module):
 
         return mean, var, log_var
 
+    # denoise_step: sample x_{t-1} from x_t and pred_noise
     def p_sample(self, model, x, t, noise_fn, clip_denoised=True, repeat_noise=False):
         mean, _, log_var = self.p_mean_variance(model, x, t, clip_denoised)
         noise = noise_like(x.shape, noise_fn, x.device, repeat_noise)
@@ -148,6 +154,7 @@ class GaussianDiffusion(nn.Module):
 
         return mean + nonzero_mask * torch.exp(0.5 * log_var) * noise
 
+    # denoise: reverse diffusion
     @torch.no_grad()
     def p_sample_loop(self, model, shape, device, noise_fn=torch.randn):
         img = noise_fn(shape, device=device)
