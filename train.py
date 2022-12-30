@@ -15,18 +15,15 @@ from dataset import MultiResolutionDataset
 from config import DiffusionConfig
 
 '''
-train processing
+training process
 '''
 
 def sample_data(loader):
-    '''
-    return a generator, yield data for training. 
-    '''
-    # Redundant function, epoch records can be placed into the loop.
 
     loader_iter = iter(loader)
     epoch = 0
 
+    # generator code
     while True:
         try:
             yield epoch, next(loader_iter)
