@@ -8,14 +8,14 @@ from model import UNet
 from config import DiffusionConfig
 from diffusion import GaussianDiffusion, make_beta_schedule
 
-# 代表不计算梯度，用于加速计算，常见于测试代码中。相反的，在训练代码中则不会添加，因为反向传播过程中需要计算权重的梯度。
+# don't compute gradient, generally seen in test code for acceleration. 
+# On the contrary, omit it in train code as we should compute weight's gradient in back propagation.
 @torch.no_grad()
 def p_sample_loop(self, model, noise, device, noise_fn=torch.randn, capture_every=1000):
     img = noise
     imgs = []
 
-    # 根据设定好的最大步数，逐步降噪获得x_{0}。这是最原始的完整降噪流程，目前已有加速采样算法，
-    # 可以将采样时间减少几十倍同时获得类似的结果。
+    # According to the T, denoise X_{t} and get X_{0} step by step.
     for i in tqdm(reversed(range(self.num_timesteps)), total=self.num_timesteps):
         img = self.p_sample(
             model,
@@ -23,7 +23,7 @@ def p_sample_loop(self, model, noise, device, noise_fn=torch.randn, capture_ever
             torch.full((img.shape[0],), i, dtype=torch.int64).to(device),
             noise_fn=noise_fn,
         )
-        # 保存图片
+        # save images
         if i % capture_every == 0:
             imgs.append(img)
 
@@ -31,7 +31,7 @@ def p_sample_loop(self, model, noise, device, noise_fn=torch.randn, capture_ever
 
     return imgs
 
-# 主方法，用于加载模型与配置文件，确定机器参数等。
+# Load model and config file, machine arguments.
 if __name__ == "__main__":
     conf = load_config(DiffusionConfig, "config/diffusion.conf", show=False)
     ckpt = torch.load("ckpt-2400k.pt")

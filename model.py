@@ -177,21 +177,23 @@ class SelfAttention(nn.Module):
         batch, channel, height, width = input.shape
         n_head = self.n_head
         head_dim = channel // n_head
-
+        # step1
         norm = self.norm(input)
         qkv = self.qkv(norm).view(batch, n_head, head_dim * 3, height, width)
+        # step2
         query, key, value = qkv.chunk(3, dim=2)  # bhdyx
-
+        # step3
         attn = torch.einsum(
             "bnchw, bncyx -> bnhwyx", query, key
         ).contiguous() / math.sqrt(channel)
         attn = attn.view(batch, n_head, height, width, -1)
+        # step4
         attn = torch.softmax(attn, -1)
         attn = attn.view(batch, n_head, height, width, height, width)
-
+        # step5
         out = torch.einsum("bnhwyx, bncyx -> bnchw", attn, value).contiguous()
         out = self.out(out.view(batch, channel, height, width))
-
+        # step6
         return out + input
 
 
@@ -200,7 +202,7 @@ class TimeEmbedding(nn.Module):
         super().__init__()
 
         self.dim = dim
-
+        # sinusoidal position embedding
         inv_freq = torch.exp(
             torch.arange(0, dim, 2, dtype=torch.float32) * (-math.log(10000) / dim)
         )
